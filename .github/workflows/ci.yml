@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: fichajes
+          POSTGRES_PASSWORD: localdev
+          POSTGRES_DB: fichajes
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fichajes -d fichajes"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://fichajes:localdev@localhost:5432/fichajes
+      JWT_SECRET: ci-test-secret
+      # Región UE para que el arranque/verificación no fallen en CI (REQ-23).
+      DEPLOY_REGION: eu-west-1
+      SUPABASE_REGION: eu-central-1
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Apply migrations
+        run: python -m app.db.migrate
+
+      - name: Verify EU data residency (REQ-23)
+        run: python -m scripts.check_region
+
+      - name: Run tests
+        run: pytest -q
+
+      - name: Compliance check
+        run: python .claude/skills/legal-compliance/scripts/compliance_check.py

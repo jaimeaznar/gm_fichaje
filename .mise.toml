@@ -1,0 +1,6 @@
+# Versión de Python alineada con pyproject.toml (requires-python == 3.12.*).
+# Replica el fix conocido de build Python/mise: mantener la versión idéntica aquí
+# y en pyproject.toml; si el build de Python falla, limpiar caché de mise
+# (`mise cache clear`) y reinstalar.
+[tools]
+python = "3.12"
