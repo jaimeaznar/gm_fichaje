@@ -1,7 +1,8 @@
 """Punto de entrada FastAPI.
 
 En el arranque verifica la residencia de datos en la UE (REQ-23): si la región no es
-UE, la app NO levanta. Monta los routers de auth, admin, fichaje, reports y corrections.
+UE, la app NO levanta. Monta los routers de auth, admin, fichaje, reports, corrections,
+export y portal.
 """
 
 from __future__ import annotations
@@ -10,7 +11,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.api import admin, auth, corrections, fichaje, reports
+from app.api import admin, auth, corrections, export, fichaje, portal, reports
 from app.core.config import assert_eu_region
 
 
@@ -28,6 +29,8 @@ app.include_router(admin.router)
 app.include_router(fichaje.router)
 app.include_router(reports.router)
 app.include_router(corrections.router)
+app.include_router(export.router)
+app.include_router(portal.router)
 
 
 @app.get("/health", tags=["health"])

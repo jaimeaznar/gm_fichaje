@@ -74,7 +74,8 @@ Consulta la skill correspondiente ANTES de implementar la funcionalidad asociada
 
 ## 5. Flujo de trabajo con Claude Code
 
-1. Lee este `CLAUDE.md`.
+1. Lee este `CLAUDE.md`. Al planificar una nueva fase, consulta `docs/DEFERRED.md` (registro de
+   decisiones diferidas y deuda técnica) para reconsiderar los pendientes en el momento oportuno.
 2. Identifica qué requisito(s) toca la tarea → abre `legal-compliance`.
 3. Abre la(s) skill(s) técnica(s) implicadas.
 4. Implementa siguiendo los patrones de `fastapi-supabase`.

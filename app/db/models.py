@@ -56,6 +56,9 @@ ALERT_TYPES = (
 )
 ALERT_SEVERITIES = ("info", "warning", "critical")
 
+# Acciones del log de retención (REQ-03): 'eligible' (cruzó los 4 años) / 'deleted' (borrado).
+RETENTION_ACTIONS = ("eligible", "deleted")
+
 
 class Base(DeclarativeBase):
     pass
@@ -251,5 +254,39 @@ class AuditAlert(Base):
         String, nullable=False, server_default=text("'warning'")
     )
     detected_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+
+
+class RetentionLog(Base):
+    """Log de gobernanza del ciclo de conservación 4 años (REQ-03).
+
+    MUTABLE (no es ledger append-only): registra qué registros cruzan el umbral de retención
+    ('eligible') y, si en el futuro se implementa el borrado físico, quién/cuándo lo ejecutó
+    ('deleted'). El job NUNCA borra registros < 4 años; este log es la prueba del cumplimiento.
+    """
+
+    __tablename__ = "retention_log"
+    __table_args__ = (
+        CheckConstraint(
+            "action IN ('eligible','deleted')",
+            name="retention_log_action_check",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    table_name: Mapped[str] = mapped_column(String, nullable=False)
+    record_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    worker_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    age_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    action: Mapped[str] = mapped_column(
+        String, nullable=False, server_default=text("'eligible'")
+    )
+    executed_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    logged_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("now()")
     )
