@@ -43,6 +43,19 @@ SOURCES = ("web", "kiosk", "mobile", "offline_sync")
 # Ventanas de cómputo de la política de tiempo (REQ-12/REQ-13).
 COMPUTATION_PERIODS = ("daily", "weekly", "monthly")
 
+# Campos de time_record que se pueden corregir vía record_correction (REQ-16).
+CORRECTABLE_FIELDS = ("occurred_at", "event_type", "modalidad", "travel_computes", "geo")
+
+# Tipos y severidades de alerta de auditoría (REQ-25).
+ALERT_TYPES = (
+    "chain_broken",
+    "login_failed",
+    "account_locked",
+    "mutation_attempt",
+    "anomalous_access",
+)
+ALERT_SEVERITIES = ("info", "warning", "critical")
+
 
 class Base(DeclarativeBase):
     pass
@@ -169,5 +182,74 @@ class TimePolicy(Base):
         Numeric, nullable=False, server_default=text("160")
     )
     updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+
+
+class RecordCorrection(Base):
+    """Corrección versionada de un `time_record` (REQ-16).
+
+    Nunca se edita el original: cada corrección es una fila nueva con motivo y autor. Es
+    append-only y hash-sellada (cadena propia por trabajador) igual que `time_record`; el
+    bloqueo lo garantiza el trigger `no_mutate_record_correction` (migración 0006).
+    """
+
+    __tablename__ = "record_correction"
+    __table_args__ = (
+        CheckConstraint(
+            "field IN ('occurred_at','event_type','modalidad','travel_computes','geo')",
+            name="record_correction_field_check",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    original_record_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    worker_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    seq: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    field: Mapped[str] = mapped_column(String, nullable=False)
+    corrected_value: Mapped[str] = mapped_column(String, nullable=False)
+    reason: Mapped[str] = mapped_column(String, nullable=False)
+    author_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    prev_hash: Mapped[str] = mapped_column(String, nullable=False)
+    hash: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+
+
+class AuditAlert(Base):
+    """Alerta de auditoría (REQ-25): manipulación o seguridad.
+
+    MUTABLE (no es ledger append-only): cadena rota, fallos/bloqueos de login, intentos de
+    mutación y accesos anómalos. La inmutabilidad solo aplica a `time_record`/`record_correction`.
+    """
+
+    __tablename__ = "audit_alert"
+    __table_args__ = (
+        CheckConstraint(
+            "alert_type IN ('chain_broken','login_failed','account_locked',"
+            "'mutation_attempt','anomalous_access')",
+            name="audit_alert_type_check",
+        ),
+        CheckConstraint(
+            "severity IN ('info','warning','critical')",
+            name="audit_alert_severity_check",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    alert_type: Mapped[str] = mapped_column(String, nullable=False)
+    worker_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    detail: Mapped[str] = mapped_column(String, nullable=False)
+    severity: Mapped[str] = mapped_column(
+        String, nullable=False, server_default=text("'warning'")
+    )
+    detected_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("now()")
     )

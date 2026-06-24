@@ -3,7 +3,7 @@
 - Login: resuelve por `code_norm`, verifica PIN (bcrypt), aplica lockout tras N
   fallos (PIN corto -> imprescindible), emite JWT con worker_id/role/pin_temporary.
 - Cambio de PIN: obligatorio en primer login (pin_temporary) antes de poder fichar.
-La emisión de `audit_alert` por bloqueo/fallos se cablea en Fase 4.
+Cada fallo de PIN emite `audit_alert(login_failed)`; el bloqueo, `account_locked` (REQ-25).
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_claims, get_db
+from app.audit.alerts import record_alert
 from app.core.config import settings
 from app.core.security import (
     create_access_token,
@@ -58,10 +59,23 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)) -> Token
 
     if not verify_pin(body.pin, worker.pin_hash):
         worker.failed_attempts += 1
-        if worker.failed_attempts >= settings.max_failed_attempts:
+        locked = worker.failed_attempts >= settings.max_failed_attempts
+        if locked:
             worker.locked_until = now + timedelta(minutes=settings.lockout_minutes)
             worker.failed_attempts = 0
         await db.commit()
+        # REQ-25: deja rastro de cada fallo y, si procede, del bloqueo de la cuenta.
+        await record_alert(
+            db, "login_failed", "PIN incorrecto en login.", worker_id=worker.id
+        )
+        if locked:
+            await record_alert(
+                db,
+                "account_locked",
+                "Cuenta bloqueada por intentos fallidos.",
+                worker_id=worker.id,
+                severity="critical",
+            )
         raise _INVALID
 
     # Éxito: limpia el contador de fallos.

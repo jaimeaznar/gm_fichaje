@@ -14,7 +14,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.time import chain_hash, iso8601, utc_now
-from app.db.models import TimeRecord
+from app.db.models import RecordCorrection, TimeRecord
 
 # Semilla fija de la cadena: prev_hash del primer registro de cada trabajador.
 GENESIS = "GENESIS"
@@ -97,21 +97,13 @@ async def append_event(
     return record
 
 
-async def verify_chain(db: AsyncSession, worker_id: uuid.UUID) -> tuple[bool, int | None]:
-    """Recomputa la cadena del trabajador en orden de `seq`.
+def verify_records(records) -> tuple[bool, int | None]:
+    """Recomputa una cadena de `time_record` ya cargada (en orden de `seq`).
 
-    Devuelve `(True, None)` si es íntegra, o `(False, seq)` con el primer eslabón roto
-    (hash recomputado distinto, o `prev_hash` que no concuerda con el anterior). Base del
-    verificador periódico de Fase 4.
+    Pura (sin BD) para poder testearla con datos sintéticos. Devuelve `(True, None)` si es
+    íntegra, o `(False, seq)` con el primer eslabón roto (hash recomputado distinto, o
+    `prev_hash` que no concuerda con el anterior).
     """
-    records = (
-        await db.execute(
-            select(TimeRecord)
-            .where(TimeRecord.worker_id == worker_id)
-            .order_by(TimeRecord.seq.asc())
-        )
-    ).scalars().all()
-
     prev_hash = GENESIS
     for record in records:
         if record.prev_hash != prev_hash:
@@ -129,3 +121,133 @@ async def verify_chain(db: AsyncSession, worker_id: uuid.UUID) -> tuple[bool, in
             return False, record.seq
         prev_hash = record.hash
     return True, None
+
+
+async def verify_chain(db: AsyncSession, worker_id: uuid.UUID) -> tuple[bool, int | None]:
+    """Carga y verifica la cadena de `time_record` de un trabajador. Base del verificador."""
+    records = (
+        await db.execute(
+            select(TimeRecord)
+            .where(TimeRecord.worker_id == worker_id)
+            .order_by(TimeRecord.seq.asc())
+        )
+    ).scalars().all()
+    return verify_records(records)
+
+
+def compute_correction_hash(
+    prev_hash: str,
+    original_record_id: uuid.UUID | str,
+    worker_id: uuid.UUID | str,
+    occurred_at: datetime,
+    field: str,
+    corrected_value: str,
+    reason: str,
+    author_id: uuid.UUID | str,
+) -> str:
+    """Hash encadenado de una corrección: sha256(prev_hash || payload canónico)."""
+    payload = (
+        f"{original_record_id}|{worker_id}|{iso8601(occurred_at)}|{field}|"
+        f"{corrected_value}|{reason}|{author_id}"
+    )
+    return chain_hash(prev_hash, payload)
+
+
+async def append_correction(
+    db: AsyncSession,
+    original_record: TimeRecord,
+    *,
+    field: str,
+    corrected_value: str,
+    reason: str,
+    author_id: uuid.UUID,
+) -> RecordCorrection:
+    """Inserta una corrección sellada y encadenada para el trabajador del registro original.
+
+    La corrección NO toca el `time_record` original (inmutable): es una fila append-only en
+    `record_correction` con su propia cadena de hash por trabajador.
+    """
+    worker_id = original_record.worker_id
+
+    # Serializa la cadena de correcciones del trabajador (clave distinta de la del ledger).
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:k))"), {"k": f"corr:{worker_id}"}
+    )
+
+    last = (
+        await db.execute(
+            select(RecordCorrection.seq, RecordCorrection.hash)
+            .where(RecordCorrection.worker_id == worker_id)
+            .order_by(RecordCorrection.seq.desc())
+            .limit(1)
+        )
+    ).first()
+    if last is None:
+        prev_hash, seq = GENESIS, 1
+    else:
+        prev_hash, seq = last.hash, last.seq + 1
+
+    occurred_at = utc_now()
+    correction_hash = compute_correction_hash(
+        prev_hash,
+        original_record.id,
+        worker_id,
+        occurred_at,
+        field,
+        corrected_value,
+        reason,
+        author_id,
+    )
+
+    correction = RecordCorrection(
+        original_record_id=original_record.id,
+        worker_id=worker_id,
+        seq=seq,
+        field=field,
+        corrected_value=corrected_value,
+        reason=reason,
+        author_id=author_id,
+        occurred_at=occurred_at,
+        prev_hash=prev_hash,
+        hash=correction_hash,
+    )
+    db.add(correction)
+    await db.commit()
+    await db.refresh(correction)
+    return correction
+
+
+def verify_correction_records(records) -> tuple[bool, int | None]:
+    """Recomputa una cadena de `record_correction` ya cargada (pura, sin BD)."""
+    prev_hash = GENESIS
+    for c in records:
+        if c.prev_hash != prev_hash:
+            return False, c.seq
+        expected = compute_correction_hash(
+            prev_hash,
+            c.original_record_id,
+            c.worker_id,
+            c.occurred_at,
+            c.field,
+            c.corrected_value,
+            c.reason,
+            c.author_id,
+        )
+        if c.hash != expected:
+            return False, c.seq
+        prev_hash = c.hash
+    return True, None
+
+
+async def verify_correction_chain(
+    db: AsyncSession, worker_id: uuid.UUID
+) -> tuple[bool, int | None]:
+    """Carga y verifica la cadena de `record_correction` de un trabajador."""
+    records = (
+        await db.execute(
+            select(RecordCorrection)
+            .where(RecordCorrection.worker_id == worker_id)
+            .order_by(RecordCorrection.seq.asc())
+        )
+    ).scalars().all()
+    return verify_correction_records(records)
