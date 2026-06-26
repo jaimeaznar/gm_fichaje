@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Administración — Fichajes Global Meats{% endblock %}
+{% block content %}
+<h1>Administración</h1>
+<p class="muted">Rol: {{ claims.role }}</p>
+<div class="card">
+  <ul>
+    {% if claims.role == "admin" %}
+      <li><a href="/admin/alta">Alta de trabajador</a></li>
+      <li><a href="/admin/politica">Política de tiempo</a></li>
+    {% endif %}
+    <li><a href="/admin/registros">Registros y correcciones</a></li>
+    <li><a href="/admin/horas">Horas extra</a></li>
+    <li><a href="/admin/export">Exportar registros</a></li>
+    {% if claims.role in ("admin", "supervisor", "inspeccion") %}
+      <li><a href="/admin/alertas">Alertas de auditoría</a></li>
+    {% endif %}
+  </ul>
+</div>
+{% endblock %}

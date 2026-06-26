@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Registros de trabajador — Administración{% endblock %}
+{% block content %}
+<h1>Registros de trabajador</h1>
+<p class="muted">Consulta los fichajes de un trabajador y registra correcciones versionadas (REQ-16).</p>
+
+<div class="card">
+  <form method="get" action="/admin/registros">
+    <label for="worker_id">Trabajador</label>
+    <select id="worker_id" name="worker_id">
+      <option value="">— Selecciona —</option>
+      {% for w in workers %}
+        <option value="{{ w.id }}" {% if selected == w.id|string %}selected{% endif %}>
+          {{ w.code }} · {{ w.first_name }} {{ w.last_name }} ({{ w.role }})
+        </option>
+      {% endfor %}
+    </select>
+    <label for="start">Desde</label>
+    <input id="start" name="start" type="date">
+    <label for="end">Hasta</label>
+    <input id="end" name="end" type="date">
+    <button type="submit">Ver registros</button>
+  </form>
+</div>
+
+{% if report %}
+  {% if not can_correct %}
+    <p class="muted">Tu rol puede consultar pero no registrar correcciones (solo admin/supervisor).</p>
+  {% endif %}
+  {% include "_registros.html" %}
+{% endif %}
+{% endblock %}

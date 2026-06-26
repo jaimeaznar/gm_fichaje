@@ -43,6 +43,43 @@ def _reject(detail: str) -> None:
     raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=detail)
 
 
+async def apply_correction(
+    db: AsyncSession,
+    *,
+    record_id: uuid.UUID,
+    field: str,
+    corrected_value: str,
+    reason: str,
+    author_id: uuid.UUID,
+) -> RecordCorrection:
+    """Aplica una corrección versionada (REQ-16). Fuente única reutilizada por API y web.
+
+    Resuelve el registro (404), valida la coherencia del valor (422), cifra la geo en reposo
+    (REQ-20/23) y la añade append-only con su cadena de hash propia (`append_correction`).
+    """
+    original = await db.get(TimeRecord, record_id)
+    if original is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Registro no existe."
+        )
+
+    _validate_corrected_value(field, corrected_value)
+
+    # La geo es dato personal cifrado en reposo (REQ-20/23): al corregirla, se sella y almacena
+    # el CIPHERTEXT, nunca el texto plano (coherente con el cifrado del fichaje original).
+    if field == "geo":
+        corrected_value = encrypt_geo(corrected_value) or ""
+
+    return await append_correction(
+        db,
+        original,
+        field=field,
+        corrected_value=corrected_value,
+        reason=reason,
+        author_id=author_id,
+    )
+
+
 @router.post(
     "/{record_id}/corrections",
     response_model=CorrectionResponse,
@@ -54,25 +91,11 @@ async def create_correction(
     claims: dict = Depends(require_role("admin", "supervisor")),
     db: AsyncSession = Depends(get_db),
 ) -> RecordCorrection:
-    original = await db.get(TimeRecord, record_id)
-    if original is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Registro no existe."
-        )
-
-    _validate_corrected_value(body.field, body.corrected_value)
-
-    # La geo es dato personal cifrado en reposo (REQ-20/23): al corregirla, se sella y almacena
-    # el CIPHERTEXT, nunca el texto plano (coherente con el cifrado del fichaje original).
-    corrected_value = body.corrected_value
-    if body.field == "geo":
-        corrected_value = encrypt_geo(corrected_value) or ""
-
-    return await append_correction(
+    return await apply_correction(
         db,
-        original,
+        record_id=record_id,
         field=body.field,
-        corrected_value=corrected_value,
+        corrected_value=body.corrected_value,
         reason=body.reason,
         author_id=uuid.UUID(claims["worker_id"]),
     )

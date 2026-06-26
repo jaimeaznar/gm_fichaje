@@ -10,6 +10,11 @@ from __future__ import annotations
 
 import hashlib
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
+
+# Zona local de la empresa. Solo se usa para PRESENTACIÓN (pantallas y export):
+# el almacenamiento, el sellado/hash y el cálculo de horas siguen en UTC.
+MADRID = ZoneInfo("Europe/Madrid")
 
 
 def utc_now() -> datetime:
@@ -20,6 +25,17 @@ def utc_now() -> datetime:
 def iso8601(dt: datetime) -> str:
     """Formatea un datetime a ISO-8601 (el cliente formatea a su zona local)."""
     return dt.astimezone(UTC).isoformat()
+
+
+def to_madrid(dt: datetime) -> datetime:
+    """Convierte un datetime UTC a hora local de Madrid (DST automático).
+
+    Solo para presentación: nunca se aplica al valor almacenado, al payload del hash
+    ni al cálculo de horas (todo eso permanece en UTC).
+    """
+    if dt.tzinfo is None:  # defensivo: los datetimes de la BD vienen aware (timestamptz)
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(MADRID)
 
 
 def chain_hash(prev_hash: str | None, payload: str) -> str:

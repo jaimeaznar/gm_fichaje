@@ -1,0 +1,144 @@
+{# Fragmento htmx: totales + detalle de registros y sus correcciones (REQ-18/19).
+   Muestra SIEMPRE el original junto a sus correcciones, nunca solo el valor corregido.
+   Si `can_correct` (solo admin/supervisor en /admin/registros), cada fila ofrece corregir. #}
+<div id="registros">
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  {% if message %}<p class="ok">{{ message }}</p>{% endif %}
+
+  <div class="card">
+    <h2>Totales del periodo ({{ report.period }})</h2>
+    <p class="muted">
+      {{ report.start.strftime("%d/%m/%Y") }} – {{ report.end.strftime("%d/%m/%Y") }}
+    </p>
+    <table>
+      <tbody>
+        <tr><th>Tiempo efectivo</th><td>{{ report.efectivo_min // 60 }}h {{ report.efectivo_min % 60 }}m</td></tr>
+        <tr><th>Ordinarias</th><td>{{ report.ordinarias_min // 60 }}h {{ report.ordinarias_min % 60 }}m</td></tr>
+        <tr><th>Extra</th><td>{{ report.extra_min // 60 }}h {{ report.extra_min % 60 }}m</td></tr>
+        <tr><th>Complementarias</th><td>{{ report.complementarias_min // 60 }}h {{ report.complementarias_min % 60 }}m</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Detalle</h2>
+    {% if report.records %}
+      <table>
+        <thead>
+          <tr><th>#</th><th>Evento</th><th>Hora (Madrid)</th><th>Modalidad</th>
+              <th>Origen</th><th>Geo</th>{% if can_correct %}<th>Acción</th>{% endif %}</tr>
+        </thead>
+        {% set note_span = 6 if can_correct else 5 %}
+        {% for r in report.records %}
+          <tbody {% if can_correct %}x-data="{ open: false }"{% endif %}>
+            <tr>
+              <td>{{ r.seq }}</td>
+              <td>{{ r.event_type }}</td>
+              <td>{{ r.occurred_at | madrid("%d/%m/%Y %H:%M:%S") }}</td>
+              <td>{{ r.modalidad }}</td>
+              <td>{{ r.source }}</td>
+              <td>{{ r.geo or "—" }}</td>
+              {% if can_correct %}
+                <td><button type="button" class="secondary" @click="open = !open">Corregir</button></td>
+              {% endif %}
+            </tr>
+            {% if can_correct %}
+              <tr x-show="open" style="display:none">
+                <td></td>
+                <td colspan="6">
+                  {# El control de valor se adapta al campo elegido (UX); el backend revalida
+                     `corrected_value` como segunda red. Cada control alimenta un hidden que
+                     serializa al string que ya espera la API (ISO-8601 UTC / enum / true|false). #}
+                  <form hx-post="/admin/correccion" hx-target="#registros" hx-swap="outerHTML"
+                        @htmx:after-request="open = false"
+                        x-data="{
+                          field: '', dt: '', ev: '{{ event_types[0] }}',
+                          mod: '{{ modalidades[0] }}', tc: false, geo: '',
+                          serialized() {
+                            if (this.field === 'occurred_at')
+                              return this.dt ? new Date(this.dt).toISOString() : '';
+                            if (this.field === 'travel_computes') return this.tc ? 'true' : 'false';
+                            if (this.field === 'event_type') return this.ev;
+                            if (this.field === 'modalidad') return this.mod;
+                            if (this.field === 'geo') return this.geo;
+                            return '';
+                          }
+                        }">
+                    <input type="hidden" name="record_id" value="{{ r.id }}">
+                    <input type="hidden" name="worker_id" value="{{ report.worker_id }}">
+                    <input type="hidden" name="corrected_value" :value="serialized()">
+
+                    <label>Campo a corregir</label>
+                    <select name="field" x-model="field">
+                      <option value="">— Selecciona —</option>
+                      {% for f in correctable_fields %}<option value="{{ f }}">{{ f }}</option>{% endfor %}
+                    </select>
+
+                    <template x-if="field === 'occurred_at'">
+                      <div>
+                        <label>Nueva fecha y hora (hora local de Madrid)</label>
+                        <input type="datetime-local" x-model="dt">
+                        <p class="muted">Se guardará como el instante UTC equivalente.</p>
+                      </div>
+                    </template>
+
+                    <template x-if="field === 'event_type'">
+                      <div>
+                        <label>Nuevo tipo de evento</label>
+                        <select x-model="ev">
+                          {% for e in event_types %}<option value="{{ e }}">{{ e }}</option>{% endfor %}
+                        </select>
+                      </div>
+                    </template>
+
+                    <template x-if="field === 'modalidad'">
+                      <div>
+                        <label>Nueva modalidad</label>
+                        <select x-model="mod">
+                          {% for m in modalidades %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
+                        </select>
+                      </div>
+                    </template>
+
+                    <template x-if="field === 'travel_computes'">
+                      <div>
+                        <label>¿El desplazamiento computa?</label>
+                        <label style="font-weight:400">
+                          <input type="checkbox" style="width:auto" x-model="tc">
+                          <span x-text="tc ? 'Sí computa (true)' : 'No computa (false)'"></span>
+                        </label>
+                      </div>
+                    </template>
+
+                    <template x-if="field === 'geo'">
+                      <div>
+                        <label>Nueva geolocalización</label>
+                        <input type="text" x-model="geo" placeholder="lat,lon">
+                      </div>
+                    </template>
+
+                    <label>Motivo (obligatorio)</label>
+                    <input name="reason" required>
+                    <button type="submit" :disabled="!field || !serialized()">Guardar corrección</button>
+                  </form>
+                </td>
+              </tr>
+            {% endif %}
+            {% for c in r.corrections %}
+              <tr>
+                <td></td>
+                <td colspan="{{ note_span }}" class="muted">
+                  ↳ Corrección de <strong>{{ c.field }}</strong> →
+                  "{{ c.corrected_value }}" · motivo: {{ c.reason }}
+                  ({{ c.occurred_at | madrid("%d/%m/%Y %H:%M") }})
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        {% endfor %}
+      </table>
+    {% else %}
+      <p class="muted">No hay registros en el rango seleccionado.</p>
+    {% endif %}
+  </div>
+</div>

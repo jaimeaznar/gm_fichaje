@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Fichar — Fichajes Global Meats{% endblock %}
+{% block content %}
+<h1>Fichar</h1>
+<p class="muted">
+  El estado y la hora válida los sella el servidor en UTC; las horas se muestran en hora
+  local de Madrid. El cronómetro es solo orientativo.
+</p>
+
+{# Aviso de eventos pendientes de sincronizar (red de seguridad offline, REQ-22). #}
+<div id="offline-banner" class="card" style="display:none; border-color:#cc0; background:#fffae6">
+  <strong>Pendiente de sincronizar:</strong>
+  <span id="offline-count">0</span> fichaje(s) guardado(s) localmente por falta de red.
+  Se reintentará automáticamente al recuperar la conexión.
+</div>
+
+{% include "_estado.html" %}
+
+<script src="/static/offline.js" defer></script>
+{% endblock %}

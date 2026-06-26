@@ -1,0 +1,89 @@
+{# Fragmento htmx: estado de jornada + botones válidos + eventos de hoy.
+   Lo renderiza GET /fichar (página completa) y POST /fichar/evento (swap outerHTML). #}
+{% set state_labels = {
+  "IDLE": "Sin jornada abierta",
+  "ABIERTA": "Jornada abierta",
+  "EN_PAUSA": "En pausa",
+  "EN_DESPLAZAMIENTO": "En desplazamiento"
+} %}
+{% set btn_labels = {
+  "check_in": "Entrar",
+  "check_out": "Salir",
+  "break_start": "Iniciar pausa",
+  "break_end": "Terminar pausa",
+  "travel_start": "Iniciar desplazamiento",
+  "travel_end": "Terminar desplazamiento"
+} %}
+<div id="estado" class="card">
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  {% if message %}<p class="ok">{{ message }}</p>{% endif %}
+
+  <h2>Estado: <span class="pill">{{ state_labels.get(state, state) }}</span></h2>
+
+  {% if since %}
+    <p class="muted" x-data="{ since: new Date('{{ since }}'), now: new Date(),
+         tick(){ this.now = new Date(); } }"
+       x-init="setInterval(() => tick(), 1000)">
+      Tiempo de jornada:
+      <strong x-text="(() => {
+        let s = Math.max(0, Math.floor((now - since)/1000));
+        let h = String(Math.floor(s/3600)).padStart(2,'0');
+        let m = String(Math.floor((s%3600)/60)).padStart(2,'0');
+        let ss = String(s%60).padStart(2,'0');
+        return h + ':' + m + ':' + ss;
+      })()">00:00:00</strong>
+    </p>
+  {% endif %}
+
+  <div>
+    {% for ev in allowed %}
+      <button data-event-type="{{ ev }}"
+              hx-post="/fichar/evento" hx-target="#estado" hx-swap="outerHTML"
+              hx-vals='{"event_type": "{{ ev }}"}'
+              {% if ev in ("check_in", "break_start", "travel_start") %}{% else %}class="secondary"{% endif %}>
+        {{ btn_labels.get(ev, ev) }}
+      </button>
+    {% endfor %}
+    {% if not allowed %}<p class="muted">No hay acciones disponibles.</p>{% endif %}
+  </div>
+
+  <h3>Eventos de hoy</h3>
+  {% if events %}
+    <table>
+      <thead><tr><th>#</th><th>Evento</th><th>Hora (Madrid)</th></tr></thead>
+      <tbody>
+        {% for e in events %}
+          <tr>
+            <td>{{ e.seq }}</td>
+            <td>{{ btn_labels.get(e.event_type, e.event_type) }}</td>
+            <td>{{ e.occurred_at | madrid("%H:%M:%S") }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">Aún no has fichado hoy.</p>
+  {% endif %}
+
+  {% if journeys %}
+    <h3>Tiempo efectivo de hoy</h3>
+    <table>
+      <thead>
+        <tr><th>Entrada</th><th>Salida</th><th>Bruto</th><th>Pausa</th>
+            <th>Despl. no computa</th><th>Efectivo</th></tr>
+      </thead>
+      <tbody>
+        {% for j in journeys %}
+          <tr>
+            <td>{{ j.check_in | madrid("%H:%M") }}</td>
+            <td>{% if j.check_out %}{{ j.check_out | madrid("%H:%M") }}{% else %}<span class="pill">en curso</span>{% endif %}</td>
+            <td>{% if j.bruto_min is not none %}{{ j.bruto_min // 60 }}h {{ j.bruto_min % 60 }}m{% else %}—{% endif %}</td>
+            <td>{{ j.pausa_min // 60 }}h {{ j.pausa_min % 60 }}m</td>
+            <td>{{ j.travel_no_min // 60 }}h {{ j.travel_no_min % 60 }}m</td>
+            <td>{% if j.efectivo_min is not none %}<strong>{{ j.efectivo_min // 60 }}h {{ j.efectivo_min % 60 }}m</strong>{% else %}—{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+</div>

@@ -25,6 +25,7 @@ class ExportCorrectionRow(BaseModel):
 
 
 class ExportRecordRow(BaseModel):
+    id: uuid.UUID
     seq: int
     event_type: str
     occurred_at: datetime

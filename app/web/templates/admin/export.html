@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Exportar registros — Administración{% endblock %}
+{% block content %}
+<h1>Exportar registros</h1>
+{% if message %}<p class="ok">{{ message }}</p>{% endif %}
+{% if reset %}
+  <div class="card" style="border-color:#cc0; background:#fffae6">
+    <h2>PIN restablecido</h2>
+    <p>{{ reset.employee_code }} — nuevo PIN (una sola vez):</p>
+    <p class="pin-box">{{ reset.pin }}</p>
+  </div>
+{% endif %}
+
+<div class="card" x-data="{ wid: '' }">
+  <label for="worker">Trabajador</label>
+  <select id="worker" name="worker_id" x-model="wid">
+    <option value="">— Selecciona —</option>
+    {% for w in workers %}
+      <option value="{{ w.id }}">{{ w.code }} · {{ w.first_name }} {{ w.last_name }} ({{ w.role }})</option>
+    {% endfor %}
+  </select>
+
+  <label for="start">Desde</label>
+  <input id="start" name="start" type="date" x-ref="start">
+  <label for="end">Hasta</label>
+  <input id="end" name="end" type="date" x-ref="end">
+
+  <p style="margin-top:1rem">
+    <a :href="'/descargar/records.csv?worker_id=' + wid + ($refs.start.value ? '&start=' + $refs.start.value : '') + ($refs.end.value ? '&end=' + $refs.end.value : '')"
+       x-show="wid"><button type="button">Descargar CSV</button></a>
+    <a :href="'/descargar/records.pdf?worker_id=' + wid + ($refs.start.value ? '&start=' + $refs.start.value : '') + ($refs.end.value ? '&end=' + $refs.end.value : '')"
+       x-show="wid"><button type="button">Descargar PDF</button></a>
+  </p>
+
+  <form method="post" action="/admin/reset-pin" x-show="wid"
+        onsubmit="return confirm('¿Restablecer el PIN de este trabajador?')">
+    <input type="hidden" name="worker_id" :value="wid">
+    <button type="submit" class="secondary">Restablecer PIN</button>
+  </form>
+</div>
+{% endblock %}

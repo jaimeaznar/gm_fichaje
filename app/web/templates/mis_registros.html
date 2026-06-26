@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Mis registros — Fichajes Global Meats{% endblock %}
+{% block content %}
+<h1>Mis registros</h1>
+<p class="muted">{{ report.full_name }} · {{ report.employee_code }}</p>
+
+<div class="card">
+  <form hx-get="/mis-registros/tabla" hx-target="#registros" hx-swap="outerHTML">
+    <div style="display:flex; gap:1rem; flex-wrap:wrap; align-items:end">
+      <div>
+        <label for="start">Desde</label>
+        <input id="start" name="start" type="date" value="{{ start or '' }}">
+      </div>
+      <div>
+        <label for="end">Hasta</label>
+        <input id="end" name="end" type="date" value="{{ end or '' }}">
+      </div>
+      <div>
+        <button type="submit">Filtrar</button>
+      </div>
+    </div>
+  </form>
+  <p style="margin-top:1rem">
+    <a href="/descargar/records.csv{{ qs }}"><button type="button" class="secondary">Descargar CSV</button></a>
+    <a href="/descargar/records.pdf{{ qs }}"><button type="button" class="secondary">Descargar PDF</button></a>
+  </p>
+</div>
+
+{% include "_registros.html" %}
+{% endblock %}

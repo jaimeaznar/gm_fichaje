@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Alertas de auditoría — Administración{% endblock %}
+{% block content %}
+<h1>Alertas de auditoría</h1>
+
+{% if verify %}
+  <div class="card" style="border-color:{{ '#1d6f42' if not verify.broken else '#c00' }}">
+    <h2>Verificación de cadena</h2>
+    <p>Trabajadores comprobados: <strong>{{ verify.checked }}</strong></p>
+    {% if verify.broken %}
+      <p class="error">Roturas detectadas: {{ verify.broken|length }}</p>
+      <ul>
+        {% for b in verify.broken %}
+          <li>{{ b.worker_id }} — {{ b.kind }}{% if b.seq is not none %} (seq {{ b.seq }}){% endif %}</li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="ok">Todas las cadenas son íntegras.</p>
+    {% endif %}
+  </div>
+{% endif %}
+
+{% if claims.role == "admin" %}
+  <form method="post" action="/admin/verificar" style="margin-bottom:1rem">
+    <button type="submit">Verificar cadena de hash</button>
+  </form>
+{% endif %}
+
+<div class="card">
+  {% if alerts %}
+    <table>
+      <thead>
+        <tr>
+          <th>Fecha (UTC)</th>
+          <th>Fecha (Madrid)</th>
+          <th>Tipo</th>
+          <th>Severidad</th>
+          <th>Trabajador</th>
+          <th>Detalle</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in alerts %}
+          <tr>
+            <td>{{ a.detected_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+            <td>{{ a.detected_at | madrid('%Y-%m-%d %H:%M:%S') }}</td>
+            <td>{{ a.alert_type }}</td>
+            <td>{{ a.severity }}</td>
+            <td>{{ a.worker_id or '—' }}</td>
+            <td>{{ a.detail }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">No hay alertas registradas.</p>
+  {% endif %}
+</div>
+{% endblock %}

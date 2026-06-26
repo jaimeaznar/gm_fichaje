@@ -35,6 +35,8 @@ async def test_export_csv_own(client, db):
     assert "efectivo_min" in body  # totales del periodo
     assert "hash" in body  # detalle sellado verificable
     assert "check_in" in body
+    # Junto al UTC verificable, se añade la columna en hora local de Madrid (presentación).
+    assert "occurred_at_madrid" in body
 
 
 async def test_export_pdf_own(client, db):

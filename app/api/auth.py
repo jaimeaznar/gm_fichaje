@@ -42,9 +42,14 @@ async def _get_worker_by_code(db: AsyncSession, employee_code: str) -> Worker | 
     return await db.scalar(select(Worker).where(Worker.code_norm == code_norm))
 
 
-@router.post("/login", response_model=TokenResponse)
-async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)) -> TokenResponse:
-    worker = await _get_worker_by_code(db, body.employee_code)
+async def authenticate(db: AsyncSession, employee_code: str, pin: str) -> Worker:
+    """Valida credenciales y devuelve el trabajador (REQ-05).
+
+    Lógica compartida por la API JSON (`/auth/login`) y la ruta web SSR (`/login`):
+    respuesta uniforme (no filtra existencia), lockout tras N fallos y rastro de auditoría
+    (REQ-25). Lanza 401 (`_INVALID`) o 429 si la cuenta está bloqueada.
+    """
+    worker = await _get_worker_by_code(db, employee_code)
 
     # Respuesta uniforme para no filtrar si el código existe.
     if worker is None or not worker.is_active:
@@ -57,7 +62,7 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)) -> Token
             detail="Cuenta bloqueada temporalmente por intentos fallidos.",
         )
 
-    if not verify_pin(body.pin, worker.pin_hash):
+    if not verify_pin(pin, worker.pin_hash):
         worker.failed_attempts += 1
         locked = worker.failed_attempts >= settings.max_failed_attempts
         if locked:
@@ -82,11 +87,51 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)) -> Token
     worker.failed_attempts = 0
     worker.locked_until = None
     await db.commit()
+    return worker
 
+
+@router.post("/login", response_model=TokenResponse)
+async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)) -> TokenResponse:
+    worker = await authenticate(db, body.employee_code, body.pin)
     token = create_access_token(
         worker_id=str(worker.id), role=worker.role, pin_temporary=worker.pin_temporary
     )
     return TokenResponse(access_token=token, must_change_pin=worker.pin_temporary)
+
+
+async def change_worker_pin(
+    db: AsyncSession, worker_id: uuid.UUID, current_pin: str, new_pin: str
+) -> Worker:
+    """Cambia el PIN tras validarlo (REQ-05). Compartido por API y ruta web.
+
+    Lanza 401 si el PIN actual no es correcto, o 422 si el nuevo es igual o trivial.
+    Al guardar, deja `pin_temporary=False` (ya puede fichar).
+    """
+    worker = await db.get(Worker, worker_id)
+    if worker is None:
+        raise _INVALID
+
+    if not verify_pin(current_pin, worker.pin_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="El PIN actual no es correcto."
+        )
+
+    if new_pin == current_pin:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="El nuevo PIN debe ser distinto del actual.",
+        )
+
+    if is_trivial_pin(new_pin, worker.code_norm):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="El nuevo PIN es demasiado predecible. Elige otro.",
+        )
+
+    worker.pin_hash = hash_pin(new_pin)
+    worker.pin_temporary = False
+    await db.commit()
+    return worker
 
 
 @router.post("/change-pin", response_model=TokenResponse)
@@ -95,31 +140,9 @@ async def change_pin(
     claims: dict = Depends(get_current_claims),
     db: AsyncSession = Depends(get_db),
 ) -> TokenResponse:
-    worker = await db.get(Worker, uuid.UUID(claims["worker_id"]))
-    if worker is None:
-        raise _INVALID
-
-    if not verify_pin(body.current_pin, worker.pin_hash):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="El PIN actual no es correcto."
-        )
-
-    if body.new_pin == body.current_pin:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="El nuevo PIN debe ser distinto del actual.",
-        )
-
-    if is_trivial_pin(body.new_pin, worker.code_norm):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="El nuevo PIN es demasiado predecible. Elige otro.",
-        )
-
-    worker.pin_hash = hash_pin(body.new_pin)
-    worker.pin_temporary = False
-    await db.commit()
-
+    worker = await change_worker_pin(
+        db, uuid.UUID(claims["worker_id"]), body.current_pin, body.new_pin
+    )
     # Token nuevo ya sin la marca de PIN temporal.
     token = create_access_token(
         worker_id=str(worker.id), role=worker.role, pin_temporary=False

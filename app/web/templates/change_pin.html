@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Cambiar PIN — Fichajes Global Meats{% endblock %}
+{% block content %}
+<div class="card" x-data="{ p1:'', p2:'', cur:'' }">
+  <h1>Cambia tu PIN</h1>
+  <p class="muted">
+    {% if forced %}Tu PIN es temporal: debes cambiarlo antes de poder fichar.{% endif %}
+    El PIN es personal e intransferible. Elige 6 dígitos no triviales.
+  </p>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <form method="post" action="/cambiar-pin">
+    <label for="current_pin">PIN actual</label>
+    <input id="current_pin" name="current_pin" type="password" inputmode="numeric"
+           pattern="\d{6}" maxlength="6" autocomplete="off" x-model="cur" required>
+
+    <label for="new_pin">PIN nuevo</label>
+    <input id="new_pin" name="new_pin" type="password" inputmode="numeric"
+           pattern="\d{6}" maxlength="6" autocomplete="off" x-model="p1" required>
+
+    <label for="new_pin2">Repite el PIN nuevo</label>
+    <input id="new_pin2" name="new_pin2" type="password" inputmode="numeric"
+           pattern="\d{6}" maxlength="6" autocomplete="off" x-model="p2" required>
+
+    <p class="error" x-show="p1 && p2 && p1 !== p2" x-cloak>Los PIN nuevos no coinciden.</p>
+    <div style="margin-top:1rem">
+      <button type="submit"
+              :disabled="cur.length!==6 || p1.length!==6 || p1!==p2">Guardar</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

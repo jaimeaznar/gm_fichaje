@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Horas extra — Administración{% endblock %}
+{% block content %}
+<h1>Horas extra por trabajador</h1>
+<p class="muted">Totaliza el tiempo efectivo del periodo de cómputo y lo reparte (REQ-08/12/26).</p>
+
+<div class="card">
+  <form method="get" action="/admin/horas">
+    <label for="worker_id">Trabajador</label>
+    <select id="worker_id" name="worker_id">
+      <option value="">— Selecciona —</option>
+      {% for w in workers %}
+        <option value="{{ w.id }}" {% if selected == w.id|string %}selected{% endif %}>
+          {{ w.code }} · {{ w.first_name }} {{ w.last_name }} ({{ w.role }})
+        </option>
+      {% endfor %}
+    </select>
+    <label for="date">Fecha de referencia (opcional)</label>
+    <input id="date" name="date" type="date" value="{{ date }}">
+    <button type="submit">Calcular</button>
+  </form>
+</div>
+
+{% if report %}
+  <div class="card">
+    <h2>{{ worker.code }} · {{ worker.first_name }} {{ worker.last_name }}</h2>
+    <p class="muted">
+      Periodo {{ report.period }}:
+      {{ report.start.strftime("%d/%m/%Y") }} – {{ report.end.strftime("%d/%m/%Y") }}
+      · relación: {{ worker.relation_type }}
+    </p>
+    <table>
+      <tbody>
+        <tr><th>Tiempo efectivo</th><td>{{ report.efectivo_min // 60 }}h {{ report.efectivo_min % 60 }}m</td></tr>
+        <tr><th>Jornada ordinaria del periodo</th><td>{{ report.ordinary_min // 60 }}h {{ report.ordinary_min % 60 }}m</td></tr>
+        <tr><th>Ordinarias</th><td>{{ report.ordinarias_min // 60 }}h {{ report.ordinarias_min % 60 }}m</td></tr>
+        <tr><th>Extra</th><td>{{ report.extra_min // 60 }}h {{ report.extra_min % 60 }}m</td></tr>
+        <tr><th>Complementarias</th><td>{{ report.complementarias_min // 60 }}h {{ report.complementarias_min % 60 }}m</td></tr>
+      </tbody>
+    </table>
+  </div>
+{% elif selected %}
+  <p class="muted">No se pudo calcular (trabajador o política no disponibles).</p>
+{% endif %}
+{% endblock %}

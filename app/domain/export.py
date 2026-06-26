@@ -17,7 +17,7 @@ from typing import Protocol
 from fpdf import FPDF
 
 from app.core.crypto import decrypt_geo
-from app.core.time import iso8601, utc_now
+from app.core.time import iso8601, to_madrid, utc_now
 from app.schemas.export import ExportCorrectionRow, ExportRecordRow, ExportReport
 
 
@@ -59,6 +59,7 @@ def build_report(worker: _Worker, records: list, corrections: list, summary: dic
         ]
         rows.append(
             ExportRecordRow(
+                id=r.id,
                 seq=r.seq,
                 event_type=r.event_type,
                 occurred_at=r.occurred_at,
@@ -110,12 +111,13 @@ def to_csv(report: ExportReport) -> str:
     w.writerow([])
 
     w.writerow(
-        ["seq", "event_type", "occurred_at", "modalidad", "source",
+        ["seq", "event_type", "occurred_at", "occurred_at_madrid", "modalidad", "source",
          "travel_computes", "geo", "prev_hash", "hash"]
     )
     for r in report.records:
         w.writerow(
-            [r.seq, r.event_type, iso8601(r.occurred_at), r.modalidad, r.source,
+            [r.seq, r.event_type, iso8601(r.occurred_at), _madrid(r.occurred_at),
+             r.modalidad, r.source,
              r.travel_computes, r.geo or "", r.prev_hash, r.hash]
         )
 
@@ -123,16 +125,21 @@ def to_csv(report: ExportReport) -> str:
     w.writerow(["# Correcciones"])
     w.writerow(
         ["record_seq", "correction_seq", "field", "corrected_value", "reason",
-         "author_id", "occurred_at", "hash"]
+         "author_id", "occurred_at", "occurred_at_madrid", "hash"]
     )
     for r in report.records:
         for c in r.corrections:
             w.writerow(
                 [r.seq, c.seq, c.field, c.corrected_value, c.reason,
-                 str(c.author_id), iso8601(c.occurred_at), c.hash]
+                 str(c.author_id), iso8601(c.occurred_at), _madrid(c.occurred_at), c.hash]
             )
 
     return buf.getvalue()
+
+
+def _madrid(dt) -> str:
+    """Hora local de Madrid para presentación (junto a UTC en el export verificable)."""
+    return to_madrid(dt).strftime("%Y-%m-%d %H:%M:%S %Z")
 
 
 def _ascii(text: str) -> str:
@@ -170,7 +177,8 @@ def to_pdf(report: ExportReport) -> bytes:
     pdf.set_font("Courier", "", 7)
     for r in report.records:
         line = (
-            f"#{r.seq} {r.event_type} {iso8601(r.occurred_at)} {r.modalidad}/{r.source} "
+            f"#{r.seq} {r.event_type} {iso8601(r.occurred_at)} "
+            f"(Madrid: {_madrid(r.occurred_at)}) {r.modalidad}/{r.source} "
             f"hash={r.hash[:16]}..."
         )
         pdf.cell(0, 4, _ascii(line), new_x="LMARGIN", new_y="NEXT")

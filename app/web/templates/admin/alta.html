@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Alta de trabajador — Administración{% endblock %}
+{% block content %}
+<h1>Alta de trabajador</h1>
+
+{% if created %}
+  <div class="card" style="border-color:#cc0; background:#fffae6">
+    <h2>Trabajador creado</h2>
+    <p>Código de empleado: <strong>{{ created.employee_code }}</strong></p>
+    <p>PIN inicial (se muestra <strong>una sola vez</strong>, anótalo y entrégalo en mano):</p>
+    <p class="pin-box">{{ created.pin }}</p>
+    <p class="muted">El trabajador deberá cambiarlo en su primer acceso.</p>
+  </div>
+{% endif %}
+
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+<div class="card">
+  <form method="post" action="/admin/alta">
+    <label for="first_name">Nombre</label>
+    <input id="first_name" name="first_name" required>
+
+    <label for="last_name">Apellidos</label>
+    <input id="last_name" name="last_name" required>
+
+    <label for="role">Rol</label>
+    <select id="role" name="role">
+      {% for r in roles %}<option value="{{ r }}">{{ r }}</option>{% endfor %}
+    </select>
+
+    <label for="relation_type">Tipo de relación</label>
+    <select id="relation_type" name="relation_type">
+      {% for rt in relation_types %}<option value="{{ rt }}">{{ rt }}</option>{% endfor %}
+    </select>
+
+    <label for="usuaria_id">Empresa usuaria (ETT/subcontrata, opcional)</label>
+    <input id="usuaria_id" name="usuaria_id" placeholder="UUID o vacío">
+
+    <label><input type="checkbox" name="geo_consent" value="true" style="width:auto">
+      Consentimiento de geolocalización</label>
+
+    <div style="margin-top:1rem"><button type="submit">Crear trabajador</button></div>
+  </form>
+</div>
+{% endblock %}
